@@ -1,0 +1,13 @@
+[Unit]
+Description=Prometheus exporter for QBittorrent
+After=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/conf.d/prometheus-qbittorrent-exporter
+ExecStart=/usr/bin/prometheus-qbittorrent-exporter $QBITTORRENT_EXPORTER_ARGS
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=network-online.target
