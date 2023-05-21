@@ -54,17 +54,17 @@ impl QBitMetrics {
             dht_nodes_gauge.clone()
         );
 
-        // download/upload stats
+        // download/upload stats - `_bytes_total` suffix will be added automatically by library :/
         let downloaded_bytes_counter = Counter::default();
         registry.register_with_unit(
-            "qbittorrent_downloaded_bytes",
+            "qbittorrent_downloaded",
             "Data downloaded since the server started, in bytes",
             Unit::Bytes,
             downloaded_bytes_counter.clone()
         );
         let uploaded_bytes_counter = Counter::default();
         registry.register_with_unit(
-            "qbittorrent_uploaded_bytes",
+            "qbittorrent_uploaded",
             "Data uploaded since the server started, in bytes",
             Unit::Bytes,
             uploaded_bytes_counter.clone()
