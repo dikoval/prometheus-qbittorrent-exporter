@@ -38,7 +38,7 @@ In standard installation any of the required CLI arguments can be passed via `/e
 Additionally, exporter log level can be configured via `RUST_LOG` environment variable (see [env_logger](https://docs.rs/env_logger/latest/env_logger/) documentation for more info).
 
 ## Similar projects
-This project is heavy inspired by https://github.com/esanchezm/prometheus-qbittorrent-exporter.
+This project is heavily inspired by https://github.com/esanchezm/prometheus-qbittorrent-exporter.
 
 Also, it would not possible without next libraries:
 * https://github.com/George-Miao/qbit
