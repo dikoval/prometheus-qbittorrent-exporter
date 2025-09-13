@@ -1,6 +1,6 @@
 # Package name should be unique
 pkgname="prometheus-qbittorrent-exporter-rs"
-pkgver="0.2.0"
+pkgver="0.3.0"
 pkgrel="1"
 pkgdesc="Prometheus exporter for QBittorrent"
 arch=("x86_64")
