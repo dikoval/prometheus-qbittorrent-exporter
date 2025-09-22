@@ -11,7 +11,7 @@ env_logger = "0.11.8"
 qbit-rs = "0.4.7"
 prometheus-client = "0.24.0"
 
-clap = { version = "4.5.47", features = ["derive"] }
+clap = { version = "4.5.48", features = ["derive"] }
 reqwest = "0.12.23"
 
 futures-util = "0.3.31"
