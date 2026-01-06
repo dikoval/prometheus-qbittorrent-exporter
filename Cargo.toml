@@ -15,6 +15,6 @@ clap = { version = "4.5.54", features = ["derive"] }
 reqwest = "0.12.28"
 
 futures-util = "0.3.31"
-tokio = { version = "1.45", features = ["rt"] }
+tokio = { version = "1.49", features = ["rt"] }
 
 tiny_http = "0.12.0"
