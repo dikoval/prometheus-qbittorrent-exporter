@@ -1782,9 +1782,9 @@ dependencies = [
 
 [[package]]
 name = "qbit-rs"
-version = "0.5.1"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce15575d4bcc94f7a6c84a72e35d4886dd2872781ae6ea6ac04e39e4b2ff1ae7"
+checksum = "08ef7400ea9c527f17410106eb7bcbbaaa7db94326e8b2081e109418c1dc74e8"
 dependencies = [
  "bytes",
  "cfg-if",
