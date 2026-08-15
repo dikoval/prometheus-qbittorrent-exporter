@@ -33,7 +33,7 @@ async fn serve(args: Cli) {
     let qbit_metrics = QBitMetrics::new(
         &mut registry,
         args.qbittorrent_endpoint, args.qbittorrent_username, args.qbittorrent_password
-    );
+    ).await;
 
     let address = ("0.0.0.0", args.exporter_port);
     let server = Server::http(address).unwrap_or_else(|e| {

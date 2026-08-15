@@ -3,7 +3,7 @@ use std::error::Error;
 use std::time::Duration;
 use std::process::exit;
 
-use log::error;
+use log::{error, info};
 use futures_util::future;
 use prometheus_client::encoding::EncodeLabelSet;
 use prometheus_client::metrics::counter::Counter;
@@ -38,9 +38,9 @@ pub struct QBitMetrics {
 }
 
 impl QBitMetrics {
-    pub fn new(registry: &mut Registry, qtorrent_endpoint: String, username: String, password: String) -> Self {
+    pub async fn new(registry: &mut Registry, qtorrent_endpoint: String, username: String, password: String) -> Self {
 
-        let qbit_client = Self::create_api_client(qtorrent_endpoint, username, password);
+        let qbit_client = Self::create_api_client(qtorrent_endpoint, username, password).await;
 
         // general status
         let status_gauge = Gauge::default();
@@ -88,22 +88,34 @@ impl QBitMetrics {
         };
     }
 
-    fn create_api_client(qtorrent_endpoint: String, username: String, password: String) -> Qbit {
+    async fn create_api_client(qtorrent_endpoint: String, username: String, password: String) -> Qbit {
         let endpoint = Url::parse(qtorrent_endpoint.as_str()).unwrap_or_else(|e| {
-            error!("Invalid QBittorrent URL provided: {qtorrent_endpoint} - {e}");
+            error!("Invalid QBittorrent URL provided: '{qtorrent_endpoint}' - {e}");
             exit(2);
         });
         let credential = Credential::new(username, password);
 
         // disable connection pooling as it leads to "IncompleteMessage" errors
         // https://github.com/hyperium/hyper/issues/2136
-        let client = reqwest::Client::builder()
+        let http_client = reqwest::Client::builder()
             .tcp_keepalive(Duration::new(15, 0))
             .pool_max_idle_per_host(0)
+            .timeout(Duration::new(5, 0))
             .build()
             .expect("Failed to build Reqwest HTTP client");
 
-        return Qbit::new_with_client(endpoint, credential, client);
+        let api_client = Qbit::new_with_client(endpoint, credential, http_client);
+
+        // check for connectivity
+        match api_client.get_version().await {
+            Ok(_) => info!("Successfully connected to QBittorrent instance {qtorrent_endpoint}."),
+            Err(e) => {
+                error!("Failed to connect to QBittorrent instance '{qtorrent_endpoint}': {e}");
+                exit(3);
+            }
+        };
+
+        api_client
     }
 
     pub async fn update_metrics(&self) -> Result<(), Box<dyn Error>> {
