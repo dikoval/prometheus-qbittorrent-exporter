@@ -1,12 +1,13 @@
 use std::error::Error;
 use std::io::Cursor;
+use std::process::exit;
 
 use clap::Parser;
-use env_logger::Env;
-use log::{debug, warn};
+use log::{LevelFilter, debug, error, warn};
 use prometheus_client::encoding::text::encode;
 use prometheus_client::registry::Registry;
 use tiny_http::{Response, Server};
+use systemd_journal_logger::{connected_to_journal, JournalLog};
 
 use crate::cli::Cli;
 use crate::metrics::QBitMetrics;
@@ -15,8 +16,7 @@ mod metrics;
 mod cli;
 
 fn main() {
-    let log_level = Env::default().default_filter_or("info");
-    env_logger::Builder::from_env(log_level).init();
+    init_logging().expect("Failed to init logging system");
 
     let args = Cli::parse();
 
@@ -36,8 +36,10 @@ async fn serve(args: Cli) {
     );
 
     let address = ("0.0.0.0", args.exporter_port);
-    let server = Server::http(address)
-        .expect("Failed to start HTTP server");
+    let server = Server::http(address).unwrap_or_else(|e| {
+        error!("Failed to start HTTP server: {e}");
+        exit(1);
+    });
 
     for request in server.incoming_requests() {
         debug!("Received request {:?} {:?}", request.method(), request.url());
@@ -50,6 +52,31 @@ async fn serve(args: Cli) {
 
         request.respond(response).expect("Failed to send response");
     }
+}
+
+fn init_logging() -> Result<(), Box<dyn Error>> {
+    let default_log_level = LevelFilter::Debug;
+
+    if connected_to_journal() {
+        JournalLog::new()?
+            .with_extra_fields(vec![("VERSION", env!("CARGO_PKG_VERSION"))])
+            .install()?;
+
+        // rely on the same configuration approach as env_logger for consistency
+        let log_level: String = std::env::var("RUST_LOG").unwrap_or(default_log_level.to_string());
+        match log_level.parse() {
+            Ok(level) => log::set_max_level(level),
+            _ => {
+                log::set_max_level(default_log_level);
+                warn!("Invalid RUST_LOG value provided: '{log_level}'. Falling back to {default_log_level} level");
+            }
+        }
+    } else {
+        let env = env_logger::Env::default().default_filter_or(default_log_level.to_string());
+        env_logger::try_init_from_env(env)?;
+    }
+
+    Ok(())
 }
 
 fn encode_error(error: &Box<dyn Error>) -> Response<Cursor<Vec<u8>>> {
