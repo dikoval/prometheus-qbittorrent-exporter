@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::error::Error;
 use std::time::Duration;
+use std::process::exit;
 
+use log::error;
 use futures_util::future;
 use prometheus_client::encoding::EncodeLabelSet;
 use prometheus_client::metrics::counter::Counter;
@@ -87,8 +89,10 @@ impl QBitMetrics {
     }
 
     fn create_api_client(qtorrent_endpoint: String, username: String, password: String) -> Qbit {
-        let endpoint = Url::parse(qtorrent_endpoint.as_str())
-            .expect(format!("Invalid QBittorrent URL provided: {}", qtorrent_endpoint).as_str());
+        let endpoint = Url::parse(qtorrent_endpoint.as_str()).unwrap_or_else(|e| {
+            error!("Invalid QBittorrent URL provided: {qtorrent_endpoint} - {e}");
+            exit(2);
+        });
         let credential = Credential::new(username, password);
 
         // disable connection pooling as it leads to "IncompleteMessage" errors
