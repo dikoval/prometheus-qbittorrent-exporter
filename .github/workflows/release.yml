@@ -15,7 +15,7 @@ jobs:
         run: "make package"
 
       - name: "Create GitHub release"
-        uses: "softprops/action-gh-release@v1"
+        uses: "softprops/action-gh-release@v3"
         with:
           files: "prometheus-qbittorrent-exporter.tar.gz"
 
