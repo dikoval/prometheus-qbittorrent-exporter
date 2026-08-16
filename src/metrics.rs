@@ -2,23 +2,23 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use log::info;
 use futures_util::future;
+use log::info;
 use prometheus_client::encoding::EncodeLabelSet;
 use prometheus_client::metrics::counter::Counter;
 use prometheus_client::metrics::family::Family;
 use prometheus_client::metrics::gauge::Gauge;
 use prometheus_client::registry::{Registry, Unit};
-use qbit_rs::model::{Credential, GetTorrentListArg, Torrent};
+use qbit_rs::Qbit;
 use qbit_rs::model::ConnectionStatus::Connected;
 use qbit_rs::model::State::Unknown;
-use qbit_rs::Qbit;
+use qbit_rs::model::{Credential, GetTorrentListArg, Torrent};
 use reqwest::Url;
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
 struct TorrentCategoryLabels {
     category: String,
-    state: String
+    state: String,
 }
 
 pub struct QBitMetrics {
@@ -33,12 +33,16 @@ pub struct QBitMetrics {
     uploaded_bytes_counter: Counter,
 
     // torrent state/category stats
-    torrent_category_gauge: Family<TorrentCategoryLabels, Gauge>
+    torrent_category_gauge: Family<TorrentCategoryLabels, Gauge>,
 }
 
 impl QBitMetrics {
-    pub async fn new(registry: &mut Registry, qtorrent_endpoint: String, username: String, password: String) -> Result<Self> {
-
+    pub async fn new(
+        registry: &mut Registry,
+        qtorrent_endpoint: String,
+        username: String,
+        password: String,
+    ) -> Result<Self> {
         let qbit_client = Self::create_api_client(qtorrent_endpoint, username, password).await?;
 
         // general status
@@ -46,13 +50,13 @@ impl QBitMetrics {
         registry.register(
             "qbittorrent_status",
             "Current status (connected/not connected) of QBittorrent instance",
-            status_gauge.clone()
+            status_gauge.clone(),
         );
         let dht_nodes_gauge = Gauge::default();
         registry.register(
             "qbittorrent_dht_nodes_total",
             "Number of DHT nodes, connected to",
-            dht_nodes_gauge.clone()
+            dht_nodes_gauge.clone(),
         );
 
         // download/upload stats - `_bytes_total` suffix will be added automatically by library :/
@@ -61,14 +65,14 @@ impl QBitMetrics {
             "qbittorrent_downloaded",
             "Data downloaded since the server started, in bytes",
             Unit::Bytes,
-            downloaded_bytes_counter.clone()
+            downloaded_bytes_counter.clone(),
         );
         let uploaded_bytes_counter = Counter::default();
         registry.register_with_unit(
             "qbittorrent_uploaded",
             "Data uploaded since the server started, in bytes",
             Unit::Bytes,
-            uploaded_bytes_counter.clone()
+            uploaded_bytes_counter.clone(),
         );
 
         // torrent state/category stats
@@ -76,18 +80,24 @@ impl QBitMetrics {
         registry.register(
             "qbittorrent_torrent_category_total",
             "Number of torrents for each category and status",
-            torrent_category_gauge.clone()
+            torrent_category_gauge.clone(),
         );
 
         Ok(Self {
             qbit_client,
-            status_gauge, dht_nodes_gauge,
-            downloaded_bytes_counter, uploaded_bytes_counter,
-            torrent_category_gauge
+            status_gauge,
+            dht_nodes_gauge,
+            downloaded_bytes_counter,
+            uploaded_bytes_counter,
+            torrent_category_gauge,
         })
     }
 
-    async fn create_api_client(qtorrent_endpoint: String, username: String, password: String) -> Result<Qbit> {
+    async fn create_api_client(
+        qtorrent_endpoint: String,
+        username: String,
+        password: String,
+    ) -> Result<Qbit> {
         let endpoint = Url::parse(qtorrent_endpoint.as_str())
             .with_context(|| format!("Invalid QBittorrent URL provided: {qtorrent_endpoint}"))?;
         let credential = Credential::new(username, password);
@@ -104,19 +114,16 @@ impl QBitMetrics {
         let api_client = Qbit::new_with_client(endpoint, credential, http_client);
 
         // check for connectivity
-        api_client.get_version()
-            .await
-            .with_context(|| format!("Failed to connect to QBittorrent instance '{qtorrent_endpoint}'"))?;
+        api_client.get_version().await.with_context(|| {
+            format!("Failed to connect to QBittorrent instance '{qtorrent_endpoint}'")
+        })?;
 
         info!("Successfully connected to QBittorrent instance {qtorrent_endpoint}.");
         Ok(api_client)
     }
 
     pub async fn update_metrics(&self) -> Result<()> {
-        let result = future::try_join(
-            self.report_status_metrics(),
-            self.report_torrent_metrics()
-        );
+        let result = future::try_join(self.report_status_metrics(), self.report_torrent_metrics());
 
         // ignore result
         let _ = result.await.context("Failed to update metrics")?;
@@ -144,7 +151,10 @@ impl QBitMetrics {
     }
 
     async fn report_torrent_metrics(&self) -> Result<()> {
-        let torrents = self.qbit_client.get_torrent_list(GetTorrentListArg::default()).await?;
+        let torrents = self
+            .qbit_client
+            .get_torrent_list(GetTorrentListArg::default())
+            .await?;
 
         let mut stats: HashMap<TorrentCategoryLabels, i64> = HashMap::new();
         for torrent in torrents.iter() {
@@ -157,7 +167,9 @@ impl QBitMetrics {
         // update gauge
         self.torrent_category_gauge.clear();
         for (labels, count) in stats {
-            self.torrent_category_gauge.get_or_create(&labels).set(count);
+            self.torrent_category_gauge
+                .get_or_create(&labels)
+                .set(count);
         }
 
         Ok(())
@@ -168,6 +180,6 @@ impl QBitMetrics {
         let state = torrent.state.clone().unwrap_or(Unknown);
         let state = format!("{:?}", state);
 
-        return TorrentCategoryLabels { category, state };
+        TorrentCategoryLabels { category, state }
     }
 }

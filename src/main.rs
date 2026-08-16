@@ -2,19 +2,19 @@ use std::fmt::Display;
 use std::io::Cursor;
 use std::process::exit;
 
-use anyhow::{Result, Error};
+use anyhow::{Error, Result};
 use clap::Parser;
 use log::{LevelFilter, debug, error, warn};
 use prometheus_client::encoding::text::encode;
 use prometheus_client::registry::Registry;
+use systemd_journal_logger::{JournalLog, connected_to_journal};
 use tiny_http::{Response, Server};
-use systemd_journal_logger::{connected_to_journal, JournalLog};
 
 use crate::cli::Cli;
 use crate::metrics::QBitMetrics;
 
-mod metrics;
 mod cli;
+mod metrics;
 
 fn main() {
     init_logging().expect("Failed to init logging system");
@@ -37,22 +37,30 @@ async fn serve(args: Cli) -> Result<()> {
 
     let qbit_metrics = QBitMetrics::new(
         &mut registry,
-        args.qbittorrent_endpoint, args.qbittorrent_username, args.qbittorrent_password
-    ).await?;
+        args.qbittorrent_endpoint,
+        args.qbittorrent_username,
+        args.qbittorrent_password,
+    )
+    .await?;
 
     let address = ("0.0.0.0", args.exporter_port);
     let server = Server::http(address).map_err(Error::from_boxed)?;
 
     for request in server.incoming_requests() {
-        debug!("Received request {:?} {:?}", request.method(), request.url());
+        debug!(
+            "Received request {:?} {:?}",
+            request.method(),
+            request.url()
+        );
 
         let response = match qbit_metrics.update_metrics().await {
             Ok(_) => prepare_response(&registry),
-            Err(e) => error_response("Failed to refresh metrics", e)
+            Err(e) => error_response("Failed to refresh metrics", e),
         };
 
-        request.respond(response)
-               .unwrap_or_else(|e| warn!("Failed to send response: {e}"));
+        request
+            .respond(response)
+            .unwrap_or_else(|e| warn!("Failed to send response: {e}"));
     }
 
     Ok(())
@@ -72,7 +80,9 @@ fn init_logging() -> Result<()> {
             Ok(level) => log::set_max_level(level),
             _ => {
                 log::set_max_level(default_log_level);
-                warn!("Invalid RUST_LOG value provided: '{log_level}'. Falling back to {default_log_level} level");
+                warn!(
+                    "Invalid RUST_LOG value provided: '{log_level}'. Falling back to {default_log_level} level"
+                );
             }
         }
     } else {
@@ -87,7 +97,7 @@ fn prepare_response(registry: &Registry) -> Response<Cursor<Vec<u8>>> {
     let mut buffer = String::new();
     match encode(&mut buffer, registry) {
         Ok(_) => Response::from_string(buffer),
-        Err(e) => error_response("Failed to encode metrics", e)
+        Err(e) => error_response("Failed to encode metrics", e),
     }
 }
 
