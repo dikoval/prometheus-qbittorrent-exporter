@@ -1,7 +1,8 @@
-use std::error::Error;
+use std::fmt::Display;
 use std::io::Cursor;
 use std::process::exit;
 
+use anyhow::{Result, Error};
 use clap::Parser;
 use log::{LevelFilter, debug, error, warn};
 use prometheus_client::encoding::text::encode;
@@ -24,37 +25,40 @@ fn main() {
         .enable_all()
         .build()
         .expect("Failed to start Tokio runtime");
-    rt.block_on(serve(args));
+
+    rt.block_on(serve(args)).map_err(|e| {
+        error!("Failed to start application: {e}");
+        exit(1);
+    });
 }
 
-async fn serve(args: Cli) {
+async fn serve(args: Cli) -> Result<()> {
     let mut registry = Registry::default();
 
     let qbit_metrics = QBitMetrics::new(
         &mut registry,
         args.qbittorrent_endpoint, args.qbittorrent_username, args.qbittorrent_password
-    ).await;
+    ).await?;
 
     let address = ("0.0.0.0", args.exporter_port);
-    let server = Server::http(address).unwrap_or_else(|e| {
-        error!("Failed to start HTTP server: {e}");
-        exit(1);
-    });
+    let server = Server::http(address).map_err(Error::from_boxed)?;
 
     for request in server.incoming_requests() {
         debug!("Received request {:?} {:?}", request.method(), request.url());
 
-        let response = qbit_metrics.update_metrics().await
-            .map_or_else(
-                |e| encode_error(&e),
-                |_| encode_metrics(&registry)
-            );
+        let response = match qbit_metrics.update_metrics().await {
+            Ok(_) => prepare_response(&registry),
+            Err(e) => error_response("Failed to refresh metrics", e)
+        };
 
-        request.respond(response).expect("Failed to send response");
+        request.respond(response)
+               .unwrap_or_else(|e| warn!("Failed to send response: {e}"));
     }
+
+    Ok(())
 }
 
-fn init_logging() -> Result<(), Box<dyn Error>> {
+fn init_logging() -> Result<()> {
     let default_log_level = LevelFilter::Debug;
 
     if connected_to_journal() {
@@ -79,15 +83,15 @@ fn init_logging() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn encode_error(error: &Box<dyn Error>) -> Response<Cursor<Vec<u8>>> {
-    warn!("Request has failed with error {}", error);
-    return Response::from_string(error.to_string())
-        .with_status_code(500);
+fn prepare_response(registry: &Registry) -> Response<Cursor<Vec<u8>>> {
+    let mut buffer = String::new();
+    match encode(&mut buffer, registry) {
+        Ok(_) => Response::from_string(buffer),
+        Err(e) => error_response("Failed to encode metrics", e)
+    }
 }
 
-fn encode_metrics(registry: &Registry) -> Response<Cursor<Vec<u8>>> {
-    let mut buffer = String::new();
-    encode(&mut buffer, &registry).expect("Failed to encode metrics");
-
-    return Response::from_string(buffer);
+fn error_response(msg: &str, root_cause: impl Display) -> Response<Cursor<Vec<u8>>> {
+    warn!("{msg}: {root_cause}");
+    Response::from_string(msg).with_status_code(500)
 }
