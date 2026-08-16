@@ -1,9 +1,8 @@
 use std::collections::HashMap;
-use std::error::Error;
 use std::time::Duration;
-use std::process::exit;
 
-use log::{error, info};
+use anyhow::{Context, Result};
+use log::info;
 use futures_util::future;
 use prometheus_client::encoding::EncodeLabelSet;
 use prometheus_client::metrics::counter::Counter;
@@ -38,9 +37,9 @@ pub struct QBitMetrics {
 }
 
 impl QBitMetrics {
-    pub async fn new(registry: &mut Registry, qtorrent_endpoint: String, username: String, password: String) -> Self {
+    pub async fn new(registry: &mut Registry, qtorrent_endpoint: String, username: String, password: String) -> Result<Self> {
 
-        let qbit_client = Self::create_api_client(qtorrent_endpoint, username, password).await;
+        let qbit_client = Self::create_api_client(qtorrent_endpoint, username, password).await?;
 
         // general status
         let status_gauge = Gauge::default();
@@ -80,19 +79,17 @@ impl QBitMetrics {
             torrent_category_gauge.clone()
         );
 
-        return Self {
+        Ok(Self {
             qbit_client,
             status_gauge, dht_nodes_gauge,
             downloaded_bytes_counter, uploaded_bytes_counter,
             torrent_category_gauge
-        };
+        })
     }
 
-    async fn create_api_client(qtorrent_endpoint: String, username: String, password: String) -> Qbit {
-        let endpoint = Url::parse(qtorrent_endpoint.as_str()).unwrap_or_else(|e| {
-            error!("Invalid QBittorrent URL provided: '{qtorrent_endpoint}' - {e}");
-            exit(2);
-        });
+    async fn create_api_client(qtorrent_endpoint: String, username: String, password: String) -> Result<Qbit> {
+        let endpoint = Url::parse(qtorrent_endpoint.as_str())
+            .with_context(|| format!("Invalid QBittorrent URL provided: {qtorrent_endpoint}"))?;
         let credential = Credential::new(username, password);
 
         // disable connection pooling as it leads to "IncompleteMessage" errors
@@ -107,28 +104,26 @@ impl QBitMetrics {
         let api_client = Qbit::new_with_client(endpoint, credential, http_client);
 
         // check for connectivity
-        match api_client.get_version().await {
-            Ok(_) => info!("Successfully connected to QBittorrent instance {qtorrent_endpoint}."),
-            Err(e) => {
-                error!("Failed to connect to QBittorrent instance '{qtorrent_endpoint}': {e}");
-                exit(3);
-            }
-        };
+        api_client.get_version()
+            .await
+            .with_context(|| format!("Failed to connect to QBittorrent instance '{qtorrent_endpoint}'"))?;
 
-        api_client
+        info!("Successfully connected to QBittorrent instance {qtorrent_endpoint}.");
+        Ok(api_client)
     }
 
-    pub async fn update_metrics(&self) -> Result<(), Box<dyn Error>> {
+    pub async fn update_metrics(&self) -> Result<()> {
         let result = future::try_join(
             self.report_status_metrics(),
             self.report_torrent_metrics()
         );
 
         // ignore result
-        return result.await.map(|_| ());
+        let _ = result.await.context("Failed to update metrics")?;
+        Ok(())
     }
 
-    async fn report_status_metrics(&self) -> Result<(), Box<dyn Error>> {
+    async fn report_status_metrics(&self) -> Result<()> {
         let info = self.qbit_client.get_transfer_info().await?;
 
         if info.connection_status == Connected {
@@ -148,7 +143,7 @@ impl QBitMetrics {
         Ok(())
     }
 
-    async fn report_torrent_metrics(&self) -> Result<(), Box<dyn Error>> {
+    async fn report_torrent_metrics(&self) -> Result<()> {
         let torrents = self.qbit_client.get_torrent_list(GetTorrentListArg::default()).await?;
 
         let mut stats: HashMap<TorrentCategoryLabels, i64> = HashMap::new();

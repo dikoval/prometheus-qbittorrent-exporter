@@ -5,6 +5,9 @@ edition = "2024"
 rust-version = "1.95"
 
 [dependencies]
+anyhow = "1.0.104"
+clap = { version = "4.6.1", features = ["derive"] }
+
 log = "0.4.33"
 env_logger = "0.11.11"
 systemd-journal-logger = "2.2.2"
@@ -12,10 +15,7 @@ systemd-journal-logger = "2.2.2"
 qbit-rs = "0.6.0"
 prometheus-client = "0.25.0"
 
-clap = { version = "4.6.1", features = ["derive"] }
 reqwest = "0.13.4"
-
 futures-util = "0.3.32"
 tokio = { version = "1.52", features = ["rt"] }
-
 tiny_http = "0.12.0"
